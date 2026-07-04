@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 # ==================== CẤU HÌNH ====================
-TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("8684641966:AAHErNpEEVFy3Q-FK5NfkoKNbcChJXTBLY8")
 if not TOKEN:
     raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN environment variable")
 

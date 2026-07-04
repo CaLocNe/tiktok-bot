@@ -4,3 +4,4 @@ selenium==4.15.2
 undetected-chromedriver==3.5.5          # 🟢 Đã sửa lỗi distutils
 selenium-stealth==1.0.6
 setuptools==69.5.1
+gunicorn==21.2.0

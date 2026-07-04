@@ -25,7 +25,7 @@ except ImportError:
     pass
 
 # ==================== CẤU HÌNH ====================
-TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("8684641966:AAHErNpEEVFy3Q-FK5NfkoKNbcChJXTBLY8")
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN environment variable")
 
@@ -94,7 +94,6 @@ def init_driver():
         "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
         "AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     )
-    # Nếu Render set biến CHROME_BIN, dùng binary đó
     chrome_bin = os.environ.get("CHROME_BIN")
     if chrome_bin:
         options.binary_location = chrome_bin
@@ -116,10 +115,9 @@ def init_driver():
         raise
 
 def tiktok_login(driver, username, password):
-    """Đăng nhập TikTok, xử lý nhiều tình huống lỗi"""
+    """Đăng nhập TikTok"""
     try:
         driver.get(LOGIN_URL)
-        # Chờ form login xuất hiện
         WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder*="Email"]'))
         )
@@ -135,23 +133,18 @@ def tiktok_login(driver, username, password):
         login_btn.click()
         time.sleep(5)
 
-        # Kiểm tra captcha
         if "captcha" in driver.page_source.lower() or "verify" in driver.page_source.lower():
             return False, "Yêu cầu xác thực (captcha) – cần đăng nhập thủ công"
 
-        # Kiểm tra đăng nhập thành công: có avatar hoặc chuyển hướng về trang chủ
         try:
-            # Thử tìm avatar
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '[data-e2e="user-avatar"]'))
             )
             return True, "Đăng nhập thành công"
         except TimeoutException:
-            # Nếu không có avatar, kiểm tra URL có phải trang chủ không
             if "tiktok.com/" in driver.current_url and "login" not in driver.current_url:
                 return True, "Đăng nhập thành công (không có avatar)"
             else:
-                # Có thể sai mật khẩu, tìm thông báo lỗi
                 try:
                     error = driver.find_element(By.CSS_SELECTOR, '[role="alert"]').text
                     return False, f"Sai thông tin: {error}"
@@ -162,23 +155,19 @@ def tiktok_login(driver, username, password):
         return False, str(e)
 
 def follow_target(driver, target_username):
-    """Follow một tài khoản, xử lý nhiều kiểu nút Follow"""
+    """Follow một tài khoản"""
     try:
         driver.get(f"https://www.tiktok.com/@{target_username}")
-        # Chờ profile load
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'h1[data-e2e="user-title"]'))
         )
 
-        # Tìm nút Follow – ưu tiên data-e2e, sau đó class, sau đó text
         follow_btn = None
-        # Cách 1: dùng data-e2e
         try:
             follow_btn = driver.find_element(By.CSS_SELECTOR, '[data-e2e="follow-button"]')
         except:
             pass
 
-        # Cách 2: tìm button có class chứa "follow"
         if not follow_btn:
             buttons = driver.find_elements(By.XPATH, '//button[contains(@class, "follow")]')
             for btn in buttons:
@@ -186,7 +175,6 @@ def follow_target(driver, target_username):
                     follow_btn = btn
                     break
 
-        # Cách 3: tìm button có text chính xác "Follow"
         if not follow_btn:
             try:
                 follow_btn = driver.find_element(By.XPATH, '//button[text()="Follow"]')
@@ -209,7 +197,6 @@ def follow_target(driver, target_username):
         return False, str(e)
 
 def follow_with_account(account, target):
-    """Dùng một account để follow"""
     driver = None
     try:
         driver = init_driver()
@@ -228,7 +215,6 @@ def follow_with_account(account, target):
                 pass
 
 async def follow_all_accounts(target: str):
-    """Dùng tất cả account để follow (bất đồng bộ)"""
     accounts = load_accounts()
     if not accounts:
         return ["⚠️ Chưa có tài khoản nào trong danh sách!"]
@@ -236,7 +222,6 @@ async def follow_all_accounts(target: str):
     for acc in accounts:
         result = await asyncio.to_thread(follow_with_account, acc, target)
         results.append(result)
-        # Nghỉ ngẫu nhiên để tránh bị phát hiện
         await asyncio.sleep(random.uniform(8, 20))
     return results
 
@@ -298,8 +283,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     count = len(load_accounts())
     await update.message.reply_text(f"🟢 Bot đang hoạt động\n📂 Số tài khoản: {count}")
 
-# ==================== FLASK KEEP-ALIVE ====================
+# ==================== FLASK ====================
 flask_app = Flask(__name__)
+application = flask_app  # <-- QUAN TRỌNG: cho Gunicorn tìm thấy
 
 @flask_app.route("/")
 def home():
@@ -324,7 +310,7 @@ def run_telegram_bot():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Chạy Flask trong một thread riêng để phục vụ health check
+    # Flask chạy ở thread phụ để phục vụ health check
     def run_flask():
         port = int(os.environ.get("PORT", 5000))
         flask_app.run(host="0.0.0.0", port=port)
@@ -332,5 +318,5 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Chạy bot polling ở thread chính (đảm bảo tồn tại)
+    # Bot chạy ở thread chính (đảm bảo tồn tại)
     run_telegram_bot()

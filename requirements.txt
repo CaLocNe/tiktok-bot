@@ -1,7 +1,7 @@
 python-telegram-bot==20.8
 Flask==3.0.0
 selenium==4.15.2
-undetected-chromedriver==3.5.5          # 🟢 Đã sửa lỗi distutils
+undetected-chromedriver==3.5.5
 selenium-stealth==1.0.6
 setuptools==69.5.1
 gunicorn==21.2.0

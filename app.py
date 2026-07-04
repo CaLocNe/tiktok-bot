@@ -17,10 +17,17 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import undetected_chromedriver as uc
 from selenium_stealth import stealth
 
+# Hỗ trợ đọc file .env (nếu có)
+try:
+    from dotenv import load_dotenv
+    load_dotenv()
+except ImportError:
+    pass
+
 # ==================== CẤU HÌNH ====================
-TOKEN = os.environ.get("8684641966:AAHErNpEEVFy3Q-FK5NfkoKNbcChJXTBLY8")
+TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
-    raise ValueError("Missing TELEGRAM_TOKEN environment variable")
+    raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN environment variable")
 
 ACCOUNTS_FILE = "accounts.txt"
 LOGIN_URL = "https://www.tiktok.com/login/phone-or-email/email"
@@ -55,7 +62,6 @@ def save_accounts(accounts):
             f.write(f"{acc['username']}:{acc['password']}\n")
 
 def add_account(username, password):
-    """Thêm tài khoản mới"""
     accounts = load_accounts()
     if any(acc["username"] == username for acc in accounts):
         return False, "Tài khoản đã tồn tại!"
@@ -64,7 +70,6 @@ def add_account(username, password):
     return True, "Thêm thành công!"
 
 def remove_account(username):
-    """Xóa tài khoản theo username"""
     accounts = load_accounts()
     new_accounts = [acc for acc in accounts if acc["username"] != username]
     if len(new_accounts) == len(accounts):
@@ -73,7 +78,6 @@ def remove_account(username):
     return True, "Xóa thành công!"
 
 def get_accounts_list():
-    """Trả về danh sách username"""
     return [acc["username"] for acc in load_accounts()]
 
 # ==================== SELENIUM DRIVER ====================
@@ -95,23 +99,28 @@ def init_driver():
     if chrome_bin:
         options.binary_location = chrome_bin
 
-    driver = uc.Chrome(options=options)
-    stealth(
-        driver,
-        languages=["en-US", "en"],
-        vendor="Google Inc.",
-        platform="Win32",
-        webgl_vendor="Intel Inc.",
-        renderer="Intel Iris OpenGL Engine",
-        fix_hairline=True,
-    )
-    return driver
+    try:
+        driver = uc.Chrome(options=options)
+        stealth(
+            driver,
+            languages=["en-US", "en"],
+            vendor="Google Inc.",
+            platform="Win32",
+            webgl_vendor="Intel Inc.",
+            renderer="Intel Iris OpenGL Engine",
+            fix_hairline=True,
+        )
+        return driver
+    except Exception as e:
+        logger.error(f"Khởi tạo driver thất bại: {e}")
+        raise
 
 def tiktok_login(driver, username, password):
-    """Đăng nhập TikTok"""
+    """Đăng nhập TikTok, xử lý nhiều tình huống lỗi"""
     try:
         driver.get(LOGIN_URL)
-        WebDriverWait(driver, 10).until(
+        # Chờ form login xuất hiện
+        WebDriverWait(driver, 15).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'input[placeholder*="Email"]'))
         )
         email_input = driver.find_element(By.CSS_SELECTOR, 'input[placeholder*="Email"]')
@@ -130,39 +139,63 @@ def tiktok_login(driver, username, password):
         if "captcha" in driver.page_source.lower() or "verify" in driver.page_source.lower():
             return False, "Yêu cầu xác thực (captcha) – cần đăng nhập thủ công"
 
-        # Kiểm tra đăng nhập thành công: có avatar
+        # Kiểm tra đăng nhập thành công: có avatar hoặc chuyển hướng về trang chủ
         try:
+            # Thử tìm avatar
             WebDriverWait(driver, 5).until(
                 EC.presence_of_element_located((By.CSS_SELECTOR, '[data-e2e="user-avatar"]'))
             )
             return True, "Đăng nhập thành công"
         except TimeoutException:
-            # Có thể sai mật khẩu
-            error = driver.find_element(By.CSS_SELECTOR, '[role="alert"]').text
-            return False, f"Sai thông tin: {error}"
+            # Nếu không có avatar, kiểm tra URL có phải trang chủ không
+            if "tiktok.com/" in driver.current_url and "login" not in driver.current_url:
+                return True, "Đăng nhập thành công (không có avatar)"
+            else:
+                # Có thể sai mật khẩu, tìm thông báo lỗi
+                try:
+                    error = driver.find_element(By.CSS_SELECTOR, '[role="alert"]').text
+                    return False, f"Sai thông tin: {error}"
+                except:
+                    return False, "Đăng nhập thất bại, không rõ nguyên nhân"
     except Exception as e:
         logger.error(f"Login error: {e}")
         return False, str(e)
 
 def follow_target(driver, target_username):
-    """Follow một tài khoản"""
+    """Follow một tài khoản, xử lý nhiều kiểu nút Follow"""
     try:
         driver.get(f"https://www.tiktok.com/@{target_username}")
+        # Chờ profile load
         WebDriverWait(driver, 10).until(
             EC.presence_of_element_located((By.CSS_SELECTOR, 'h1[data-e2e="user-title"]'))
         )
 
-        # Tìm nút Follow
-        buttons = driver.find_elements(By.XPATH, '//button[contains(@class, "follow") or contains(text(), "Follow")]')
+        # Tìm nút Follow – ưu tiên data-e2e, sau đó class, sau đó text
         follow_btn = None
-        for btn in buttons:
-            text = btn.text
-            if "Follow" in text or "Following" in text:
-                follow_btn = btn
-                break
+        # Cách 1: dùng data-e2e
+        try:
+            follow_btn = driver.find_element(By.CSS_SELECTOR, '[data-e2e="follow-button"]')
+        except:
+            pass
+
+        # Cách 2: tìm button có class chứa "follow"
+        if not follow_btn:
+            buttons = driver.find_elements(By.XPATH, '//button[contains(@class, "follow")]')
+            for btn in buttons:
+                if "Follow" in btn.text or "Following" in btn.text:
+                    follow_btn = btn
+                    break
+
+        # Cách 3: tìm button có text chính xác "Follow"
+        if not follow_btn:
+            try:
+                follow_btn = driver.find_element(By.XPATH, '//button[text()="Follow"]')
+            except:
+                pass
 
         if not follow_btn:
             return False, "Không tìm thấy nút Follow"
+
         if "Following" in follow_btn.text:
             return False, "Đã follow từ trước"
 
@@ -195,7 +228,7 @@ def follow_with_account(account, target):
                 pass
 
 async def follow_all_accounts(target: str):
-    """Dùng tất cả account để follow"""
+    """Dùng tất cả account để follow (bất đồng bộ)"""
     accounts = load_accounts()
     if not accounts:
         return ["⚠️ Chưa có tài khoản nào trong danh sách!"]
@@ -203,6 +236,7 @@ async def follow_all_accounts(target: str):
     for acc in accounts:
         result = await asyncio.to_thread(follow_with_account, acc, target)
         results.append(result)
+        # Nghỉ ngẫu nhiên để tránh bị phát hiện
         await asyncio.sleep(random.uniform(8, 20))
     return results
 
@@ -227,7 +261,7 @@ async def add_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     username = context.args[0]
     password = " ".join(context.args[1:])
-    ok, msg = add_account(username, password)  # ĐÃ SỬA: gọi hàm bên trong handler
+    ok, msg = add_account(username, password)
     await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}")
 
 async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -235,7 +269,7 @@ async def remove_account(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ Cách dùng: /remove_account <username>")
         return
     username = context.args[0]
-    ok, msg = remove_account(username)         # ĐÃ SỬA: gọi hàm bên trong handler
+    ok, msg = remove_account(username)
     await update.message.reply_text(f"{'✅' if ok else '❌'} {msg}")
 
 async def list_accounts(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -265,7 +299,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🟢 Bot đang hoạt động\n📂 Số tài khoản: {count}")
 
 # ==================== FLASK KEEP-ALIVE ====================
-flask_app = Flask(__name__)   # ĐÃ SỬA: import đúng
+flask_app = Flask(__name__)
 
 @flask_app.route("/")
 def home():
@@ -277,7 +311,6 @@ def health():
 
 # ==================== MAIN ====================
 def run_telegram_bot():
-    """Chạy bot Telegram polling trong thread riêng"""
     app = Application.builder().token(TOKEN).build()
     app.add_handler(CommandHandler("start", start))
     app.add_handler(CommandHandler("add_account", add_account))
@@ -297,4 +330,4 @@ if __name__ == "__main__":
 
     # Chạy Flask web server
     port = int(os.environ.get("PORT", 5000))
-    flask_app.run(host="0.0.0.0", port=port)   # ĐÃ SỬA: gọi đúng
+    flask_app.run(host="0.0.0.0", port=port)

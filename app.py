@@ -324,9 +324,13 @@ def run_telegram_bot():
     app.run_polling()
 
 if __name__ == "__main__":
-    # Chạy Flask trong thread riêng (để phục vụ health check)
-    flask_thread = threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=int(os.environ.get("PORT", 5000))), daemon=True)
+    # Chạy Flask trong một thread riêng để phục vụ health check
+    def run_flask():
+        port = int(os.environ.get("PORT", 5000))
+        flask_app.run(host="0.0.0.0", port=port)
+
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Chạy bot polling ở thread chính (đảm bảo luôn chạy)
+    # Chạy bot polling ở thread chính (đảm bảo tồn tại)
     run_telegram_bot()

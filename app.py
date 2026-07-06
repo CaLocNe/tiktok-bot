@@ -17,7 +17,6 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 import undetected_chromedriver as uc
 from selenium_stealth import stealth
 
-# Hỗ trợ đọc file .env (nếu có)
 try:
     from dotenv import load_dotenv
     load_dotenv()
@@ -27,22 +26,17 @@ except ImportError:
 # ==================== CẤU HÌNH ====================
 TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
-    raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN environment variable")
+    raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN")
 
-# In ra 10 ký tự đầu của token để kiểm tra (ẩn một phần)
-if TOKEN:
-    masked = TOKEN[:10] + "..." + TOKEN[-5:] if len(TOKEN) > 15 else "***"
-    print(f"🔑 Token loaded: {masked}")
-
-ACCOUNTS_FILE = "accounts.txt"
-LOGIN_URL = "https://www.tiktok.com/login/phone-or-email/email"
-
-# Logging
+# Log
 logging.basicConfig(
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     level=logging.INFO
 )
 logger = logging.getLogger(__name__)
+
+ACCOUNTS_FILE = "accounts.txt"
+LOGIN_URL = "https://www.tiktok.com/login/phone-or-email/email"
 
 # ==================== QUẢN LÝ TÀI KHOẢN ====================
 def load_accounts():
@@ -285,7 +279,7 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # ==================== FLASK ====================
 flask_app = Flask(__name__)
-application = flask_app  # <-- QUAN TRỌNG: cho Gunicorn tìm thấy
+application = flask_app  # cho Gunicorn
 
 @flask_app.route("/")
 def home():
@@ -295,10 +289,9 @@ def home():
 def health():
     return "OK"
 
-# ==================== MAIN ====================
-def run_telegram_bot():
+# ==================== KHỞI CHẠY BOT (global) ====================
+def run_bot():
     try:
-        print("🔄 Đang tạo application bot...")
         app = Application.builder().token(TOKEN).build()
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("add_account", add_account))
@@ -308,20 +301,19 @@ def run_telegram_bot():
         app.add_handler(CommandHandler("follow", follow))
         app.add_handler(CommandHandler("status", status))
 
-        print("🚀 Telegram bot đã khởi động...")
+        logger.info("🚀 Telegram bot đã khởi động...")
+        print("🚀 Telegram bot is running...")  # để log thấy rõ
         app.run_polling()
     except Exception as e:
-        print(f"❌ Lỗi khi chạy bot: {e}")
-        logger.error(f"Lỗi bot: {e}")
+        logger.error(f"❌ Lỗi bot: {e}")
+        print(f"❌ Bot error: {e}")
 
+# Chạy bot trong thread riêng để không block Flask
+bot_thread = threading.Thread(target=run_bot, daemon=True)
+bot_thread.start()
+
+# ==================== MAIN ====================
 if __name__ == "__main__":
-    # Flask chạy ở thread phụ
-    def run_flask():
-        port = int(os.environ.get("PORT", 5000))
-        flask_app.run(host="0.0.0.0", port=port)
-
-    flask_thread = threading.Thread(target=run_flask, daemon=True)
-    flask_thread.start()
-
-    # Bot chạy ở thread chính
-    run_telegram_bot()
+    # Nếu chạy trực tiếp (không dùng Gunicorn), vẫn chạy Flask và bot
+    port = int(os.environ.get("PORT", 5000))
+    flask_app.run(host="0.0.0.0", port=port)

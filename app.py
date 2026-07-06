@@ -29,6 +29,11 @@ TOKEN = os.environ.get("BOT_TOKEN") or os.environ.get("TELEGRAM_TOKEN")
 if not TOKEN:
     raise ValueError("Missing BOT_TOKEN or TELEGRAM_TOKEN environment variable")
 
+# In ra 10 ký tự đầu của token để kiểm tra (ẩn một phần)
+if TOKEN:
+    masked = TOKEN[:10] + "..." + TOKEN[-5:] if len(TOKEN) > 15 else "***"
+    print(f"🔑 Token loaded: {masked}")
+
 ACCOUNTS_FILE = "accounts.txt"
 LOGIN_URL = "https://www.tiktok.com/login/phone-or-email/email"
 
@@ -41,7 +46,6 @@ logger = logging.getLogger(__name__)
 
 # ==================== QUẢN LÝ TÀI KHOẢN ====================
 def load_accounts():
-    """Đọc danh sách tài khoản từ file"""
     if not os.path.exists(ACCOUNTS_FILE):
         return []
     with open(ACCOUNTS_FILE, "r") as f:
@@ -56,7 +60,6 @@ def load_accounts():
     return accounts
 
 def save_accounts(accounts):
-    """Ghi danh sách tài khoản vào file"""
     with open(ACCOUNTS_FILE, "w") as f:
         for acc in accounts:
             f.write(f"{acc['username']}:{acc['password']}\n")
@@ -82,7 +85,6 @@ def get_accounts_list():
 
 # ==================== SELENIUM DRIVER ====================
 def init_driver():
-    """Khởi tạo undetected Chrome driver với stealth (hỗ trợ Render)"""
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")
     options.add_argument("--no-sandbox")
@@ -115,7 +117,6 @@ def init_driver():
         raise
 
 def tiktok_login(driver, username, password):
-    """Đăng nhập TikTok"""
     try:
         driver.get(LOGIN_URL)
         WebDriverWait(driver, 15).until(
@@ -155,7 +156,6 @@ def tiktok_login(driver, username, password):
         return False, str(e)
 
 def follow_target(driver, target_username):
-    """Follow một tài khoản"""
     try:
         driver.get(f"https://www.tiktok.com/@{target_username}")
         WebDriverWait(driver, 10).until(
@@ -297,20 +297,25 @@ def health():
 
 # ==================== MAIN ====================
 def run_telegram_bot():
-    app = Application.builder().token(TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(CommandHandler("add_account", add_account))
-    app.add_handler(CommandHandler("remove_account", remove_account))
-    app.add_handler(CommandHandler("list_accounts", list_accounts))
-    app.add_handler(CommandHandler("clear_accounts", clear_accounts))
-    app.add_handler(CommandHandler("follow", follow))
-    app.add_handler(CommandHandler("status", status))
+    try:
+        print("🔄 Đang tạo application bot...")
+        app = Application.builder().token(TOKEN).build()
+        app.add_handler(CommandHandler("start", start))
+        app.add_handler(CommandHandler("add_account", add_account))
+        app.add_handler(CommandHandler("remove_account", remove_account))
+        app.add_handler(CommandHandler("list_accounts", list_accounts))
+        app.add_handler(CommandHandler("clear_accounts", clear_accounts))
+        app.add_handler(CommandHandler("follow", follow))
+        app.add_handler(CommandHandler("status", status))
 
-    logger.info("🚀 Telegram bot đã khởi động...")
-    app.run_polling()
+        print("🚀 Telegram bot đã khởi động...")
+        app.run_polling()
+    except Exception as e:
+        print(f"❌ Lỗi khi chạy bot: {e}")
+        logger.error(f"Lỗi bot: {e}")
 
 if __name__ == "__main__":
-    # Flask chạy ở thread phụ để phục vụ health check
+    # Flask chạy ở thread phụ
     def run_flask():
         port = int(os.environ.get("PORT", 5000))
         flask_app.run(host="0.0.0.0", port=port)
@@ -318,5 +323,5 @@ if __name__ == "__main__":
     flask_thread = threading.Thread(target=run_flask, daemon=True)
     flask_thread.start()
 
-    # Bot chạy ở thread chính (đảm bảo tồn tại)
+    # Bot chạy ở thread chính
     run_telegram_bot()

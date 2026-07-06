@@ -278,52 +278,9 @@ async def status(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(f"🟢 Bot đang hoạt động\n📂 Số tài khoản: {count}")
 
 # ==================== FLASK ====================
-flask_app = Flask(__name__)
-application = flask_app  # cho Gunicorn
-
-@flask_app.route("/")
-def home():
-    return "TikTok Follow Bot is running!"
-
-@flask_app.route("/health")
-def health():
-    return "OK"
-
-# ==================== KHỞI CHẠY BOT (global) ====================
-# ==================== KHỞI CHẠY BOT ====================
-def run_bot():
-    """Chạy bot Telegram trong thread riêng với event loop riêng"""
-    try:
-        # Tạo event loop mới cho thread này
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
-
-        # Xây dựng application
-        app = Application.builder().token(TOKEN).build()
-        app.add_handler(CommandHandler("start", start))
-        app.add_handler(CommandHandler("add_account", add_account))
-        app.add_handler(CommandHandler("remove_account", remove_account))
-        app.add_handler(CommandHandler("list_accounts", list_accounts))
-        app.add_handler(CommandHandler("clear_accounts", clear_accounts))
-        app.add_handler(CommandHandler("follow", follow))
-        app.add_handler(CommandHandler("status", status))
-
-        print("🚀 Telegram bot is starting...")
-        logger.info("🚀 Telegram bot đang khởi động...")
-
-        # Chạy polling với event loop vừa tạo
-        loop.run_until_complete(app.run_polling())
-    except Exception as e:
-        logger.error(f"❌ Lỗi bot: {e}")
-        print(f"❌ Bot error: {e}")
-
-# Chạy bot trong thread riêng (không block Flask)
-bot_thread = threading.Thread(target=run_bot, daemon=True)
-bot_thread.start()
-
 # ==================== FLASK ====================
 flask_app = Flask(__name__)
-application = flask_app
+application = flask_app  # cho Gunicorn (nếu dùng)
 
 @flask_app.route("/")
 def home():
@@ -333,7 +290,32 @@ def home():
 def health():
     return "OK"
 
-# ==================== MAIN ====================
+# ==================== HÀM CHẠY BOT (ASYNC) ====================
+async def run_bot():
+    """Hàm chạy bot Telegram (async)"""
+    app = Application.builder().token(TOKEN).build()
+    app.add_handler(CommandHandler("start", start))
+    app.add_handler(CommandHandler("add_account", add_account))
+    app.add_handler(CommandHandler("remove_account", remove_account))
+    app.add_handler(CommandHandler("list_accounts", list_accounts))
+    app.add_handler(CommandHandler("clear_accounts", clear_accounts))
+    app.add_handler(CommandHandler("follow", follow))
+    app.add_handler(CommandHandler("status", status))
+
+    print("🚀 Telegram bot is starting...")
+    logger.info("🚀 Telegram bot đang khởi động...")
+    await app.run_polling()
+
+# ==================== CHẠY CHÍNH ====================
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 5000))
-    flask_app.run(host="0.0.0.0", port=port)
+    # Flask chạy trong thread riêng để bot có main thread
+    def run_flask():
+        port = int(os.environ.get("PORT", 5000))
+        flask_app.run(host="0.0.0.0", port=port)
+
+    flask_thread = threading.Thread(target=run_flask, daemon=True)
+    flask_thread.start()
+
+    # Bot chạy ở main thread (đảm bảo asyncio hoạt động)
+    import asyncio
+    asyncio.run(run_bot())

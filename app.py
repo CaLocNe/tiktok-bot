@@ -290,8 +290,15 @@ def health():
     return "OK"
 
 # ==================== KHỞI CHẠY BOT (global) ====================
+# ==================== KHỞI CHẠY BOT ====================
 def run_bot():
+    """Chạy bot Telegram trong thread riêng với event loop riêng"""
     try:
+        # Tạo event loop mới cho thread này
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+        # Xây dựng application
         app = Application.builder().token(TOKEN).build()
         app.add_handler(CommandHandler("start", start))
         app.add_handler(CommandHandler("add_account", add_account))
@@ -301,19 +308,32 @@ def run_bot():
         app.add_handler(CommandHandler("follow", follow))
         app.add_handler(CommandHandler("status", status))
 
-        logger.info("🚀 Telegram bot đã khởi động...")
-        print("🚀 Telegram bot is running...")  # để log thấy rõ
-        app.run_polling()
+        print("🚀 Telegram bot is starting...")
+        logger.info("🚀 Telegram bot đang khởi động...")
+
+        # Chạy polling với event loop vừa tạo
+        loop.run_until_complete(app.run_polling())
     except Exception as e:
         logger.error(f"❌ Lỗi bot: {e}")
         print(f"❌ Bot error: {e}")
 
-# Chạy bot trong thread riêng để không block Flask
+# Chạy bot trong thread riêng (không block Flask)
 bot_thread = threading.Thread(target=run_bot, daemon=True)
 bot_thread.start()
 
+# ==================== FLASK ====================
+flask_app = Flask(__name__)
+application = flask_app
+
+@flask_app.route("/")
+def home():
+    return "TikTok Follow Bot is running!"
+
+@flask_app.route("/health")
+def health():
+    return "OK"
+
 # ==================== MAIN ====================
 if __name__ == "__main__":
-    # Nếu chạy trực tiếp (không dùng Gunicorn), vẫn chạy Flask và bot
     port = int(os.environ.get("PORT", 5000))
     flask_app.run(host="0.0.0.0", port=port)
